@@ -21,6 +21,7 @@
 - 🪝 **LSPosed Module**: This app is itself an Xposed module and can block specific Activities / Services / Providers by rule.
 - 🔐 **Tiered Permission Support**: Normal mode (UsageStats) / ADB / Root (Magisk, KernelSU), with automatic downgrade.
 - 💥 **Crash Logging**: Globally captures uncaught exceptions to disk for fast diagnosis.
+- 🔋 **Background Auto-Throttle (v0.5.8)**: When the app moves to the background, all sampling coroutines pause (except the foreground detection service); foreground refresh interval is lowered from 500ms to 2s, so it no longer pins a CPU core.
 
 ## 🛠 Tech Stack
 

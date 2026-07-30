@@ -13,8 +13,8 @@ android {
         applicationId = "com.appslim.analyzer"
         minSdk = 29            // Android 10 起（报告 §14：适配 Android 10-16）
         targetSdk = 34
-        versionCode = 21
-        versionName = "0.5.7"
+        versionCode = 22
+        versionName = "0.5.8"
     }
 
     signingConfigs {
@@ -59,6 +59,7 @@ dependencies {
     implementation("androidx.navigation:navigation-compose:2.8.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.5")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.5")
+    implementation("androidx.lifecycle:lifecycle-process:2.8.5")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     // ---- Room 数据库（采集记录持久化） ----

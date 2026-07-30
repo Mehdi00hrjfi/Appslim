@@ -5,6 +5,9 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.viewModelScope
 import com.appslim.analyzer.analysis.RiskScorer
 import com.appslim.analyzer.analysis.SdkIdentifier
@@ -20,6 +23,7 @@ import com.appslim.analyzer.root.ShizukuBridge
 import com.appslim.analyzer.rules.RulesGenerator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -43,6 +47,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** 应用列表权限状态（使用情况访问，用于扫描组件运行时行为） */
     val usageGranted = MutableStateFlow(false)
+
+    /** 应用是否处于前台（进程级生命周期）；后台时自动暂停/降频所有采集 */
+    val appForeground = MutableStateFlow(true)
 
     /** 应用搜索关键字（应用列表页搜索框） */
     val search = MutableStateFlow("")
@@ -120,7 +127,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     init {
         refreshPermissions()
         scanInstalled()
+        observeAppVisibility()
         startProcessPolling()
+    }
+
+    /**
+     * 监听进程级前后台状态（ProcessLifecycleOwner）：
+     * 应用进入后台即置 appForeground=false，所有采集循环会据此暂停/降频，
+     * 从而退出后台后不再持续占用 CPU 核心。
+     */
+    private fun observeAppVisibility() {
+        ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onStart(owner: LifecycleOwner) { appForeground.value = true }
+            override fun onStop(owner: LifecycleOwner) { appForeground.value = false }
+        })
     }
 
     fun refreshPermissions() {
@@ -161,23 +181,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * 启动真实进程采样协程：
-     * - 进程列表：每 ~500ms 单次快照，首帧 CPU=0 立即上屏，下一帧补齐；
-     * - 系统 CPU：独立协程循环，不再串行排在进程采样后面（避免相互拖慢）；
-     * - 未拿到 Root 时周期性（约 5s）重新检测一次，使首页在用户授权 Root 后及时刷新状态。
+     * 进程采样协程（生命周期感知、后台自动暂停）：
+     * - 前台：每 [PROCESS_INTERVAL] 采样一次（2s，远轻于原 500ms 全量 su 扫描）；
+     * - 后台：跳过采集、只做 delay，CPU 占用趋近 0；
+     * - 系统 CPU 循环同样受前台门控，且测量后显式 delay，避免忙等占用核心。
      */
     private fun startProcessPolling() {
         viewModelScope.launch(Dispatchers.IO) {
             var iter = 0
-            while (true) {
-                refreshProcesses()
-                if (!perms.value.root && ++iter % 10 == 0) refreshPermissions()
-                delay(500L)
+            while (isActive) {
+                if (appForeground.value) {
+                    refreshProcesses()
+                    if (!perms.value.root && ++iter % 10 == 0) refreshPermissions()
+                }
+                delay(PROCESS_INTERVAL)
             }
         }
         viewModelScope.launch(Dispatchers.IO) {
-            while (true) {
-                systemCpuPercent.value = sampler.sampleSystemCpu(500)
+            while (isActive) {
+                if (appForeground.value) {
+                    systemCpuPercent.value = sampler.sampleSystemCpu(SYSTEM_CPU_SLEEP)
+                }
+                delay(SYSTEM_CPU_INTERVAL)
             }
         }
     }
@@ -306,4 +331,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** 高风险组件数（总览页） */
     fun highRiskCount(): Int =
         metrics.value.count { tierOf(it) == RiskTier.BLOCK || tierOf(it) == RiskTier.HIGH }
+
+    companion object {
+        /** 前台进程列表刷新间隔（原 500ms 全量 su 扫描过密，改为 2s） */
+        private const val PROCESS_INTERVAL = 2000L
+        /** 系统 CPU 测量窗口 */
+        private const val SYSTEM_CPU_SLEEP = 500L
+        /** 系统 CPU 循环间隔（测量后显式 delay，避免忙等占核心） */
+        private const val SYSTEM_CPU_INTERVAL = 1000L
+    }
 }
