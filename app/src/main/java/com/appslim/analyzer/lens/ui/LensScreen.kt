@@ -72,25 +72,28 @@ fun LensScreen(vm: LensViewModel, pkg: String, autoStart: Boolean = false, onBac
 
     LaunchedEffect(pkg) { vm.load(pkg) }
 
-    // 从「一键检测」直达时（详情页 auto=1），加载完成后自动开始检测，无需再点一次
-    LaunchedEffect(pkg, autoStart) {
-        if (autoStart && !vm.isRunning.value && vm.profileResult.value == null) {
-            vm.runProfile()
-        }
-    }
-
-    // 「使用情况访问」权限（决定能否读到前台 Activity）。从设置页返回后重新检查。
+    // 「使用情况访问」权限（决定能否读到前台 Activity）+「显示在其他应用上层」（决定检测后能否自动返回）
     val context = LocalContext.current
     var usageGranted by remember { mutableStateOf(PermissionHelper.hasUsageAccess(context)) }
+    var overlayGranted by remember { mutableStateOf(PermissionHelper.hasOverlayPermission(context)) }
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val obs = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 usageGranted = PermissionHelper.hasUsageAccess(context)
+                overlayGranted = PermissionHelper.hasOverlayPermission(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(obs)
         onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
+    }
+
+    // 从「一键检测」直达时（详情页 auto=1），加载完成后自动开始检测，无需再点一次。
+    // 仅在已授予悬浮窗权限时自动跑——否则无法自动返回，交给用户先看权限引导再手动启动。
+    LaunchedEffect(pkg, autoStart) {
+        if (autoStart && overlayGranted && !vm.isRunning.value && vm.profileResult.value == null) {
+            vm.runProfile()
+        }
     }
 
     val levelColor = when (level) {
@@ -138,7 +141,10 @@ fun LensScreen(vm: LensViewModel, pkg: String, autoStart: Boolean = false, onBac
                     )
                 }
                 Text(
-                    "将启动该应用并在前台运行 10 秒，每 500ms 采样一次（Activity / CPU），然后返回本应用。",
+                    if (overlayGranted)
+                        "将启动该应用并在前台运行 10 秒，每 500ms 采样一次（Activity / CPU / 内存），结束后自动返回本应用并展示结果。"
+                    else
+                        "将启动该应用并在前台运行 10 秒，每 500ms 采样一次。检测结束后点通知即可返回（授予「显示在其他应用上层」可自动返回）。",
                     fontSize = 12.sp, color = MiuiTextSecondary, modifier = Modifier.padding(top = 6.dp)
                 )
             }
@@ -172,6 +178,29 @@ fun LensScreen(vm: LensViewModel, pkg: String, autoStart: Boolean = false, onBac
                             colors = ButtonDefaults.buttonColors(containerColor = MiuiOrange)
                         ) {
                             Text("去开启使用情况访问", fontSize = 14.sp)
+                        }
+                    }
+                }
+            }
+
+            // 权限引导：没有「显示在其他应用上层」则检测完成无法自动返回（Android 10+ 后台启动限制）
+            if (!overlayGranted) {
+                item {
+                    MiuiCard {
+                        Text("需要「显示在其他应用上层」权限", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MiuiOrange)
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "Android 10 之后，应用启动别的 App 后系统会禁止它再自己切回前台。授予此权限后，检测满 10 秒会自动跳回本应用并展示结果。\n不授予也能用：检测结束后点通知即可返回。",
+                            fontSize = 12.sp, color = MiuiTextSecondary
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Button(
+                            onClick = { PermissionHelper.openOverlaySettings(context) },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = MiuiOrange)
+                        ) {
+                            Text("去开启（仅用于自动返回）", fontSize = 14.sp)
                         }
                     }
                 }
@@ -249,23 +278,35 @@ fun LensScreen(vm: LensViewModel, pkg: String, autoStart: Boolean = false, onBac
                             if (r.activities.isEmpty()) {
                                 Text("无数据（见上方说明）", fontSize = 13.sp, color = MiuiTextSecondary)
                             } else {
-                                r.activities.forEach { a ->
-                                    ActivityUsageRow(a)
+                                r.activities.sortedByDescending { it.peakCpu }.forEachIndexed { i, a ->
+                                    ActivityUsageRow(a, isTop = i == 0)
                                     Spacer(Modifier.height(8.dp))
                                 }
                             }
                         }
                         Spacer(Modifier.height(12.dp))
                         MiuiCard {
-                            MiuiSectionTitle("进程资源占用（采样 ${r.processes.size} 个）")
+                            MiuiSectionTitle("进程资源占用（采样 ${r.processes.size} 个，按占用排序）")
                             if (r.processes.isEmpty()) {
-                                Text("检测期间未发现该应用进程", fontSize = 13.sp, color = MiuiTextSecondary)
+                                Text("检测期间未发现该应用进程（普通模式可能需授予悬浮窗/Root 才读得到）", fontSize = 13.sp, color = MiuiTextSecondary)
                             } else {
-                                r.processes.forEach { p ->
-                                    ProcessRow(p)
+                                r.processes.sortedByDescending { it.peakCpu }.forEachIndexed { i, p ->
+                                    ProcessRow(p, isTop = i == 0)
                                     Spacer(Modifier.height(8.dp))
                                 }
                             }
+                        }
+                    }
+
+                    // 用检测结果去管理：返回应用详情页，可一键优化 / 阻断高占用组件
+                    item {
+                        Button(
+                            onClick = onBack,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = MiuiGreen)
+                        ) {
+                            Text("返回详情并管理", fontSize = 15.sp)
                         }
                     }
                 }
@@ -305,7 +346,7 @@ fun LensScreen(vm: LensViewModel, pkg: String, autoStart: Boolean = false, onBac
 }
 
 @Composable
-private fun ActivityUsageRow(a: ProfileResult.ActivityUsage) {
+private fun ActivityUsageRow(a: ProfileResult.ActivityUsage, isTop: Boolean = false) {
     val tint = when {
         a.avgCpu >= 60f -> MiuiRed
         a.avgCpu >= 25f -> MiuiOrange
@@ -316,6 +357,7 @@ private fun ActivityUsageRow(a: ProfileResult.ActivityUsage) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(a.className.substringAfterLast('.'), fontSize = 14.sp, fontWeight = FontWeight.Medium,
                 color = MiuiTextPrimary, modifier = Modifier.weight(1f))
+            if (isTop) Text("🔥 占用最高", fontSize = 11.sp, color = MiuiRed)
             Text("均 %.0f%% / 峰 %.0f%%".format(a.avgCpu, a.peakCpu), fontSize = 12.sp, color = tint)
         }
         Spacer(Modifier.height(4.dp))
@@ -328,7 +370,7 @@ private fun ActivityUsageRow(a: ProfileResult.ActivityUsage) {
 }
 
 @Composable
-private fun ProcessRow(p: ProfileResult.ProcessResource) {
+private fun ProcessRow(p: ProfileResult.ProcessResource, isTop: Boolean = false) {
     val tint = when {
         p.avgCpu >= 60f -> MiuiRed
         p.avgCpu >= 25f -> MiuiOrange
@@ -339,6 +381,7 @@ private fun ProcessRow(p: ProfileResult.ProcessResource) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(p.processName.substringAfterLast('.'), fontSize = 14.sp, fontWeight = FontWeight.Medium,
                 color = MiuiTextPrimary, modifier = Modifier.weight(1f))
+            if (isTop) Text("🔥 占用最高", fontSize = 11.sp, color = MiuiRed)
             Text("PID ${p.pid}", fontSize = 11.sp, color = MiuiTextSecondary)
         }
         Spacer(Modifier.height(4.dp))

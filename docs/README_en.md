@@ -14,7 +14,7 @@
 
 ## ✨ Features
 
-- 🚀 **One-tap Detection (launch behavior analysis)**: A single tap auto-opens the target app, keeps it in the foreground for 10 seconds sampling every 500ms, records which Activities were started and each process's CPU / memory usage, then **auto-returns to this app and shows the results** (v0.5.9 fix: previously it didn't return and the process list was empty).
+- 🚀 **One-tap Detection (launch behavior analysis)**: A single tap auto-opens the target app, keeps it in the foreground for 10 seconds sampling every 500ms, records which Activities were started and each process's CPU / memory usage, then **auto-returns to this app and shows the results** (grant "Display over other apps" so it can return automatically; otherwise tap the notification). Results highlight the **highest-usage** Activity / process, with a one-tap "back to detail & manage" entry.
 - 📋 **Activity Enumeration**: Statically enumerate all Activities of the target app (with `exported` / `launcher` flags).
 - 🔍 **Dex Behavior Scan**: Scan the target APK's Dex to spot system-capability calls and SDK fingerprints.
 - 📊 **Runtime Monitoring**: A foreground service samples process CPU / memory / network / WakeLock (via UsageStats).

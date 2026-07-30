@@ -10,6 +10,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import com.appslim.analyzer.lens.model.ProfileResult
 import com.appslim.analyzer.lens.model.ProfileState
@@ -179,8 +180,10 @@ class ProfileService : Service() {
         )
     }
 
-    /** 采样结束后把本应用（AppSlim Analyzer）带回前台，方便直接查看结果 */
+    /** 采样结束后把本应用（AppSlim Analyzer）带回前台，方便直接查看结果。
+     *  仅在已授予「显示在其他应用上层」权限时才尝试——这是 Android 10+ 后台启动 Activity 限制的唯一可靠豁免。 */
     private fun bringAppToFront() {
+        if (!Settings.canDrawOverlays(this)) return
         runCatching {
             val self = applicationContext.packageName
             val it = packageManager.getLaunchIntentForPackage(self)?.apply {
@@ -203,8 +206,10 @@ class ProfileService : Service() {
         }.getOrNull()
 
         val ok = result.status == ProfileStatus.SUCCESS
-        val text = if (ok) "完成：${result.activities.size} 个 Activity · 耗时 ${"%.1f".format(result.launchMs / 1000f)}s"
+        val base = if (ok) "完成：${result.activities.size} 个 Activity · 耗时 ${"%.1f".format(result.launchMs / 1000f)}s"
         else "未完成：${result.errorMessage.take(40)}"
+        // 未授予悬浮窗权限时无法自动返回，提示用户点通知回到本应用
+        val text = if (Settings.canDrawOverlays(this)) base else "$base · 点此返回查看结果"
 
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.notify(NOTIF_ID, NotificationCompat.Builder(this, CHANNEL_ID)
