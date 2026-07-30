@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- LSPosed 模块作用域（默认作用于自身，用户在 LSPosed 中追加目标应用） -->
+    <array name="xposed_scope">
+        <item>com.appslim.analyzer</item>
+    </array>
+</resources>

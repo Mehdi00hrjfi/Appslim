@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 字母 A 风格化图标（绿色渐变方块上的剪影） -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#34D399"
+        android:pathData="M30,30h48a8,8 0 0 1 8,8v32a8,8 0 0 1 -8,8H30a8,8 0 0 1 -8,-8V38a8,8 0 0 1 8,-8z" />
+    <path
+        android:fillColor="#04170F"
+        android:pathData="M54,40 L68,72 H60.5 L57.5,65 H50.5 L47.5,72 H40 Z M54,52 L55.8,59 H52.2 Z" />
+</vector>

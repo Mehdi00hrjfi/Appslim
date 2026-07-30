@@ -1,0 +1,22 @@
+# 签名密钥 / 本地配置（切勿上传）
+*.jks
+keystore.jks
+local.properties
+*.keystore
+
+# 构建产物
+.gradle/
+build/
+app/build/
+capture/
+.externalNativeBuild/
+*.apk
+*.aab
+
+# IDE
+.idea/
+*.iml
+.DS_Store
+
+# Kotlin 编译器缓存 / 错误日志
+.kotlin/
