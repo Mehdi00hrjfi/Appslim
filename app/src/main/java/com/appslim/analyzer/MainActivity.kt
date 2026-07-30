@@ -175,15 +175,24 @@ fun AppNav(vm: MainViewModel) {
                 AppDetailScreen(
                     vm,
                     onBack = { nav.popBackStack() },
-                    onLens = { p -> vm.selectApp(p); nav.navigate("lens?pkg=$p") }
+                    onLens = { p -> vm.selectApp(p); nav.navigate("lens?pkg=$p&auto=1") }
                 )
             }
             composable(
-                route = "lens",
-                arguments = listOf(navArgument("pkg") { defaultValue = "" })
+                route = "lens?pkg={pkg}&auto={auto}",
+                arguments = listOf(
+                    navArgument("pkg") { defaultValue = "" },
+                    navArgument("auto") { defaultValue = "0" }
+                )
             ) { backStack ->
                 val pkg = backStack.arguments?.getString("pkg").orEmpty()
-                LensScreen(vm = viewModel<LensViewModel>(), pkg = pkg, onBack = { nav.popBackStack() })
+                val autoStart = backStack.arguments?.getString("auto") == "1"
+                LensScreen(
+                    vm = viewModel<LensViewModel>(),
+                    pkg = pkg,
+                    autoStart = autoStart,
+                    onBack = { nav.popBackStack() }
+                )
             }
             composable(Dest.Rules.route) { RulesScreen(vm) }
             composable(Dest.Report.route) { ReportScreen(vm) }

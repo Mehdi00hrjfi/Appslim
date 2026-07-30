@@ -58,7 +58,7 @@ import com.appslim.analyzer.ui.theme.MiuiYellow
 
 /** 性能检测页（v0.5.4：状态反馈 + 权限三档展示） */
 @Composable
-fun LensScreen(vm: LensViewModel, pkg: String, onBack: () -> Unit) {
+fun LensScreen(vm: LensViewModel, pkg: String, autoStart: Boolean = false, onBack: () -> Unit) {
     val label by vm.appLabel.collectAsState()
     val level by vm.permissionLevel.collectAsState()
     val acts by vm.activities.collectAsState()
@@ -71,6 +71,13 @@ fun LensScreen(vm: LensViewModel, pkg: String, onBack: () -> Unit) {
     val loadError by vm.loadError.collectAsState()
 
     LaunchedEffect(pkg) { vm.load(pkg) }
+
+    // 从「一键检测」直达时（详情页 auto=1），加载完成后自动开始检测，无需再点一次
+    LaunchedEffect(pkg, autoStart) {
+        if (autoStart && !vm.isRunning.value && vm.profileResult.value == null) {
+            vm.runProfile()
+        }
+    }
 
     // 「使用情况访问」权限（决定能否读到前台 Activity）。从设置页返回后重新检查。
     val context = LocalContext.current

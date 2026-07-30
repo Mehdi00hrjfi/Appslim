@@ -46,6 +46,14 @@ class ApplensSampler(private val context: Context) {
         val lastSeen: Long
     )
 
+    /** 单进程采样（用于「进程资源占用」展示） */
+    data class ProcessSample(
+        val pid: Int,
+        val name: String,
+        val cpu: Float,
+        val memKb: Long
+    )
+
     data class SamplingReport(
         val packageName: String,
         val appLabel: String,
@@ -108,6 +116,37 @@ class ApplensSampler(private val context: Context) {
             samples = samples,
             stats = stats
         )
+    }
+
+    /**
+     * 采样检测期间该包的全部进程资源占用（CPU / 内存）。
+     * 用于「进程资源占用」展示：top 取 CPU%，dumpsys meminfo <pid> 取 PSS（有 root 走 su）。
+     */
+    fun sampleProcesses(targetPackage: String): List<ProcessSample> {
+        val top = ApplensShell.exec(
+            "top -b -n 1 -o PID,%CPU,CMDLINE 2>/dev/null | grep -E '${Regex.escape(targetPackage)}'",
+            useRoot = ApplensShell.isRootAvailable
+        )
+        if (!top.success) return emptyList()
+        val list = mutableListOf<ProcessSample>()
+        for (line in top.output.lineSequence()) {
+            val cols = line.trim().split(Regex("\\s+"))
+            val pid = cols.firstOrNull()?.toIntOrNull() ?: continue
+            val cpu = cols.getOrNull(1)?.removeSuffix("%")?.toFloatOrNull() ?: 0f
+            val cmd = cols.drop(2).joinToString(" ")
+            if (!cmd.contains(targetPackage)) continue
+            val name = cmd.substringAfterLast('/').substringBefore(':').ifBlank { cmd }
+            var memKb = 0L
+            val memRes = ApplensShell.exec(
+                "dumpsys meminfo $pid 2>/dev/null | grep -E 'TOTAL PSS|TOTAL:' | head -1",
+                useRoot = ApplensShell.isRootAvailable
+            )
+            if (memRes.success) {
+                memKb = Regex("(\\d+)").find(memRes.output)?.groupValues?.get(1)?.toLong() ?: 0L
+            }
+            list.add(ProcessSample(pid, name, cpu, memKb))
+        }
+        return list.sortedByDescending { it.cpu }
     }
 
     /** 采样一次 */

@@ -113,6 +113,8 @@ class ProfileService : Service() {
             } finally {
                 runCatching { wakeLock?.release() }
                 ProfileSession.setRunning(false)
+                // 采样结束后自动把本应用带回前台，让用户在 Lens 页直接看到结果
+                bringAppToFront()
                 stopSelf()
             }
         }
@@ -155,16 +157,37 @@ class ProfileService : Service() {
                 peakCpu = it.maxCpu
             )
         }
+        // 进程资源占用（CPU 来自 top，内存来自 dumpsys meminfo，普通模式内存可能为 0）
+        val processes = sampler.sampleProcesses(pkg).map {
+            ProfileResult.ProcessResource(
+                pid = it.pid,
+                processName = it.name,
+                avgCpu = it.cpu,
+                peakCpu = it.cpu,
+                memMb = (it.memKb / 1024).toInt()
+            )
+        }
         return ProfileResult(
             packageName = pkg,
             launchedActivity = launcher,
             launchMs = launchMs,
             launchedOk = launchedOk,
             activities = activities,
-            processes = emptyList(),
+            processes = processes,
             errorMessage = if (launchedOk) "" else "未采到该应用前台 Activity（可能未启动成功，或需授予「使用情况访问」）",
             status = if (launchedOk) ProfileStatus.SUCCESS else ProfileStatus.LAUNCH_FAILED
         )
+    }
+
+    /** 采样结束后把本应用（AppSlim Analyzer）带回前台，方便直接查看结果 */
+    private fun bringAppToFront() {
+        runCatching {
+            val self = applicationContext.packageName
+            val it = packageManager.getLaunchIntentForPackage(self)?.apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+            }
+            if (it != null) startActivity(it)
+        }.onFailure { CrashLogger.logToFile("ProfileService.bringAppToFront", it) }
     }
 
     private fun notifyDone(result: ProfileResult, label: String) {
