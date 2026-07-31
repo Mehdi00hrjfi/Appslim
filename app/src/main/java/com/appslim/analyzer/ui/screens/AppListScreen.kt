@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.sp
 import com.appslim.analyzer.ui.MainViewModel
 import com.appslim.analyzer.ui.MainViewModel.AppFilter
 import com.appslim.analyzer.ui.MainViewModel.AppItem
+import com.appslim.analyzer.ui.MainViewModel.AppSort
 import com.appslim.analyzer.ui.components.MiuiBadge
 import com.appslim.analyzer.ui.components.MiuiCard
 import com.appslim.analyzer.ui.components.MiuiPageBg
@@ -117,6 +118,13 @@ fun AppListScreen(vm: MainViewModel, onOpenApp: (String) -> Unit) {
                 onSelect = { vm.appFilter.value = it }
             )
 
+            // 排序：名称 / 可瘦身 / 最近更新 / 最近使用（最近使用需「使用情况访问」授权）
+            SortChips(
+                current = vm.appSort.value,
+                showRecent = usageGranted,
+                onSelect = { vm.appSort.value = it }
+            )
+
             // Root 提示
             if (!perms.root && !perms.shizuku) {
                 HintBanner(
@@ -175,8 +183,8 @@ fun AppListScreen(vm: MainViewModel, onOpenApp: (String) -> Unit) {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(list, key = { it.pkg }) { app ->
                         AppItemCard(
+                            vm = vm,
                             app = app,
-                            compCount = vm.compCountOf(app.pkg),
                             onClick = { onOpenApp(app.pkg) }
                         )
                     }
@@ -304,23 +312,29 @@ private fun FilterChips(current: AppFilter, onSelect: (AppFilter) -> Unit) {
 }
 
 @Composable
-private fun AppItemCard(app: AppItem, compCount: Int?, onClick: () -> Unit) {
+private fun AppItemCard(vm: MainViewModel, app: AppItem, onClick: () -> Unit) {
+    val meta = vm.metaOf(app.pkg)
+    // 图标异步：仅本卡片可见时才解码，命中 IconCache 内存后直接复用
+    var icon by remember(app.pkg) { mutableStateOf(vm.iconFor(app.pkg)) }
+    LaunchedEffect(app.pkg) {
+        if (icon == null) icon = vm.loadIcon(app.pkg, app.apkPath)
+    }
     Card(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MiuiSurface),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-            Row(
-                modifier = Modifier.padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                AppIcon(
-                    bitmap = app.icon,
-                    size = 44.dp,
-                    placeholderSize = 24.dp
-                )
-                Spacer(Modifier.size(12.dp))
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            AppIcon(
+                bitmap = icon,
+                size = 44.dp,
+                placeholderSize = 24.dp
+            )
+            Spacer(Modifier.size(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(app.label, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MiuiTextPrimary)
                 Text(
@@ -331,10 +345,49 @@ private fun AppItemCard(app: AppItem, compCount: Int?, onClick: () -> Unit) {
                     modifier = Modifier.padding(top = 2.dp)
                 )
             }
+            val comp = meta?.compCount
+            val bg = meta?.backgroundCount ?: 0
             MiuiBadge(
-                text = if (compCount != null) "$compCount 组件" else "点击扫描",
-                color = if (compCount != null) MiuiGreen else MiuiTextSecondary
+                text = when {
+                    comp != null -> "$comp 组件" + if (bg > 0) " · $bg 后台" else ""
+                    else -> "点击扫描"
+                },
+                color = when {
+                    comp == null -> MiuiTextSecondary
+                    bg >= 10 -> MiuiOrange      // 后台组件多的，优先瘦身提示
+                    else -> MiuiGreen
+                }
             )
+        }
+    }
+}
+
+/** 排序条：名称 / 可瘦身优先 / 最近更新 / 最近使用（最近使用视权限条件显示） */
+@Composable
+private fun SortChips(current: AppSort, showRecent: Boolean, onSelect: (AppSort) -> Unit) {
+    val items = buildList {
+        add(AppSort.NAME to "名称")
+        add(AppSort.SLIM to "可瘦身")
+        add(AppSort.UPDATED to "最近更新")
+        if (showRecent) add(AppSort.RECENT to "最近使用")
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        items.forEach { (sort, label) ->
+            val selected = current == sort
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(if (selected) MiuiGreenLight else Color(0xFFF2F2F2))
+                    .clickable { onSelect(sort) }
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    text = label,
+                    fontSize = 13.sp,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                    color = if (selected) MiuiGreen else MiuiTextSecondary
+                )
+            }
         }
     }
 }

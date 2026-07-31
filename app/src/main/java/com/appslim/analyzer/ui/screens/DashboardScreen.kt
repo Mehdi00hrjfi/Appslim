@@ -200,7 +200,7 @@ fun DashboardScreen(vm: MainViewModel) {
                         title = "扫描已安装应用",
                         subtitle = "重新加载应用列表与组件数据",
                         onClick = {
-                            vm.scanInstalled()
+                            vm.refreshAppList()
                             Toast.makeText(context, "正在重新加载应用列表…", Toast.LENGTH_SHORT).show()
                         }
                     )

@@ -22,6 +22,10 @@ data class ActivityRecord(
  * @param netMbPerDay  日均网络流量（MB）
  * @param bgMinPerDay  日均后台驻留（分钟）
  * @param coreAffinity 与核心功能的相关度 0~1（1 = 核心功能，报告 §14.3：需结合用户行为）
+ * @param behaviorTags 行为特征标签（由 BehaviorClassifier 产出，不依赖 SDK 名单）
+ * @param staticRisk   仅凭 Manifest 得出的静态风险分，没有运行时数据时用它排序
+ * @param safeToBlock  是否可以放心禁用；false 表示会造成用户可感知的功能损失
+ * @param sideEffect   禁用后的具体后果说明，展示给用户看
  */
 data class ComponentMetric(
     val packageName: String,
@@ -33,7 +37,11 @@ data class ComponentMetric(
     val netMbPerDay: Float = 0f,
     val bgMinPerDay: Float = 0f,
     val coreAffinity: Float = 0.5f,
-    val sdkName: String? = null
+    val sdkName: String? = null,
+    val behaviorTags: List<String> = emptyList(),
+    val staticRisk: Int = 0,
+    val safeToBlock: Boolean = false,
+    val sideEffect: String = ""
 )
 
 /** 风险评分结果（报告 §7 评分模型） */

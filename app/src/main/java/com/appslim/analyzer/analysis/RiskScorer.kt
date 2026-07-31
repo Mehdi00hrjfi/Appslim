@@ -38,7 +38,28 @@ object RiskScorer {
         else -> RiskTier.LOW
     }
 
+    /**
+     * 综合风险分 —— 运行时打分与静态行为分取高者。
+     *
+     * 这么设计是因为两者各有盲区：刚扫完还没跑过监控时，运行时数据全是 0，
+     * 光看 score() 所有组件都是低风险，等于没分析；反过来，有些组件 Manifest
+     * 上人畜无害，实际却在疯狂跑 CPU。取高者能同时兜住这两种情况。
+     */
+    fun combined(m: ComponentMetric): Int = maxOf(score(m).total, m.staticRisk)
+
+    fun combinedTier(m: ComponentMetric): RiskTier = tier(combined(m))
+
     /** 一键优化：返回所有非核心（MID 及以上）组件 */
     fun pickBlockCandidates(metrics: List<ComponentMetric>): List<ComponentMetric> =
         metrics.filter { tier(score(it).total) != RiskTier.LOW }
+
+    /**
+     * 保守版一键优化：在综合风险达标的基础上，再要求 safeToBlock。
+     *
+     * 与 pickBlockCandidates 的区别在于会主动排掉桌面入口、前台服务、深链 ——
+     * 这三类禁用后用户立刻就能察觉出问题，不该由「一键」来做决定。
+     */
+    fun pickSafeCandidates(metrics: List<ComponentMetric>): List<ComponentMetric> =
+        metrics.filter { it.safeToBlock && combinedTier(it) != RiskTier.LOW }
+            .sortedByDescending { combined(it) }
 }

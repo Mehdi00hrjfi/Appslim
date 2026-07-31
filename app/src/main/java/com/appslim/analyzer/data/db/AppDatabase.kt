@@ -38,6 +38,35 @@ data class RuleSetEntity(
     val updatedAt: Long
 )
 
+/**
+ * 应用列表缓存（MT Manager 式架构的核心）：
+ * 只存「列表展示 + 智能排序」所需的最小字段，避免每次启动重扫 APK。
+ *
+ * - apkPath 用于判断是否「APK 变了」（升级/重装）→ 变了就重新 enrich；
+ * - 四大组件计数直接来自 PackageInfo 的 activities/services/receivers/providers 数组长度，
+ *   不触发 ManifestScanner 的全量 intent-filter 探针（那是很重的 IO，留到点击时才做）；
+ * - installTime / updateTime 供「最近更新」排序；lastLaunch 不入表（来自 UsageStats，运行时取）。
+ */
+@Entity(tableName = "app_cache")
+data class AppInfoEntity(
+    @PrimaryKey val packageName: String,
+    val appName: String,
+    val versionName: String,
+    val apkPath: String,
+    val isSystem: Boolean,
+    val activityCount: Int,
+    val serviceCount: Int,
+    val receiverCount: Int,
+    val providerCount: Int,
+    val installTime: Long,
+    val updateTime: Long,
+    val cachedAt: Long
+) {
+    val compCount: Int get() = activityCount + serviceCount + receiverCount + providerCount
+    /** 后台组件（服务 + 接收器）＝ 最该被瘦身、最常偷跑的指标 */
+    val backgroundCount: Int get() = serviceCount + receiverCount
+}
+
 @Dao
 interface EventDao {
     @Insert suspend fun insert(e: ComponentEventEntity)
@@ -61,14 +90,31 @@ interface RuleSetDao {
     @Query("SELECT * FROM rule_sets") fun all(): Flow<List<RuleSetEntity>>
 }
 
+@Dao
+interface AppCacheDao {
+    @Query("SELECT * FROM app_cache")
+    suspend fun all(): List<AppInfoEntity>
+    @Query("SELECT * FROM app_cache WHERE packageName = :pkg")
+    suspend fun get(pkg: String): AppInfoEntity?
+    @Insert(onConflict = androidx.room.OnConflictStrategy.REPLACE)
+    suspend fun put(e: AppInfoEntity)
+    /** 卸掉已卸载应用对应的缓存行（传入当前已安装包名集合） */
+    @Query("DELETE FROM app_cache WHERE packageName NOT IN (:pkgs)")
+    suspend fun prune(pkgs: List<String>)
+}
+
 @Database(
-    entities = [ComponentEventEntity::class, DailyUsageEntity::class, RuleSetEntity::class],
-    version = 1, exportSchema = false
+    entities = [
+        ComponentEventEntity::class, DailyUsageEntity::class,
+        RuleSetEntity::class, AppInfoEntity::class
+    ],
+    version = 2, exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun eventDao(): EventDao
     abstract fun usageDao(): UsageDao
     abstract fun ruleSetDao(): RuleSetDao
+    abstract fun appCacheDao(): AppCacheDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
@@ -76,7 +122,10 @@ abstract class AppDatabase : RoomDatabase() {
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
                     context.applicationContext, AppDatabase::class.java, "appslim.db"
-                ).build().also { INSTANCE = it }
+                )
+                    // 开发期表结构演进直接重建，避免写一次性 Migration
+                    .fallbackToDestructiveMigration()
+                    .build().also { INSTANCE = it }
             }
     }
 }
