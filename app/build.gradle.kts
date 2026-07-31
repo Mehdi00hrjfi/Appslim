@@ -13,8 +13,8 @@ android {
         applicationId = "com.appslim.analyzer"
         minSdk = 29            // Android 10 起（报告 §14：适配 Android 10-16）
         targetSdk = 34
-        versionCode = 27
-        versionName = "0.6.2"
+        versionCode = 28
+        versionName = "0.6.3"
     }
 
     signingConfigs {

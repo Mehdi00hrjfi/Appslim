@@ -114,6 +114,11 @@ app/src/main/java/com/appslim/analyzer/
 
 ## 📌 更新日志
 
+### v0.6.3 — 列表缓存一致性：广播实时层
+- 新增 `PackageWatcher`：动态注册 `PACKAGE_ADDED / REMOVED / REPLACED` 广播，运行中装/卸 App 立即刷新列表。
+- 与「启动即 `getInstalledApplications` 全量同步」互为兜底：重新打开不漏新装 App，运行中也不 stale。
+- 动态注册（Application 上下文）不受 Android 8+ 后台静态广播限制影响。
+
 ### v0.6.2 — 应用列表模块重构（MT Manager 式）
 - **快列表**：`getInstalledApplications(0)` 零额外 flag 出列表，不碰组件、不解码图标，100–300ms 可见。
 - **Room 缓存**：新增 `app_cache` 表，二次启动只富化「新装 / 更新」的应用，不再每次重扫。

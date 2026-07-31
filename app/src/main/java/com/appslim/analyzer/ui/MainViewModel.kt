@@ -2,7 +2,10 @@ package com.appslim.analyzer.ui
 
 import android.app.Application
 import android.app.usage.UsageStatsManager
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Bitmap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.DefaultLifecycleObserver
@@ -165,6 +168,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     init {
         refreshPermissions()
         refreshAppList()
+        registerPackageWatcher()   // 常驻时监听安装/卸载，实时刷新列表
         observeAppVisibility()
         startProcessPolling()
     }
@@ -285,6 +289,38 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** 异步解码图标（仅可见卡片调用）；命中内存直接返回 */
     suspend fun loadIcon(pkg: String, apkPath: String): Bitmap? =
         IconCache.load(getApplication<Application>().packageManager, pkg, apkPath)
+
+    /**
+     * 安装/卸载/更新广播监听（缓存一致性的「实时层」）。
+     *
+     * 启动同步（getInstalledApplications 每次刷新都跑）已经保证「重新打开 App 不会漏掉新装 App」，
+     * 但 App 还活着的时候用户去装了个新 App，列表不会自动刷新——这一层就是补这个口子：
+     * 监听 PACKAGE_ADDED / REMOVED / REPLACED，触发一次 refreshAppList。
+     *
+     * 用动态注册（在 Application 上下文上），不受 Android 8+ 后台静态广播限制影响；
+     * 进程在就能收到，前台更稳。加 dataScheme("package") 是必须的，否则收不到包级广播。
+     */
+    private val packageWatcher = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                Intent.ACTION_PACKAGE_ADDED,
+                Intent.ACTION_PACKAGE_REMOVED,
+                Intent.ACTION_PACKAGE_REPLACED -> viewModelScope.launch { refreshAppList() }
+            }
+        }
+    }
+    private var watcherRegistered = false
+    private fun registerPackageWatcher() {
+        if (watcherRegistered) return
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_PACKAGE_ADDED)
+            addAction(Intent.ACTION_PACKAGE_REMOVED)
+            addAction(Intent.ACTION_PACKAGE_REPLACED)
+            addDataScheme("package")
+        }
+        runCatching { getApplication<Application>().registerReceiver(packageWatcher, filter) }
+            .onSuccess { watcherRegistered = true }
+    }
 
     /**
      * 进程采样协程（生命周期感知、后台自动暂停）：
