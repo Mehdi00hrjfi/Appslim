@@ -8,6 +8,16 @@
   <a href="./docs/README_en.md">English</a>
 </p>
 
+<p align="center">
+  <a href="https://github.com/Horizen5/Appslim/releases/latest"><b>⬇ 下载最新版 APK</b></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/Horizen5/Appslim/releases/latest"><img src="https://img.shields.io/github/v/release/Horizen5/Appslim?label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC" alt="最新版本"></a>
+  <a href="https://github.com/Horizen5/Appslim/releases"><img src="https://img.shields.io/github/downloads/Horizen5/Appslim/total?label=%E4%B8%8B%E8%BD%BD%E9%87%8F" alt="下载量"></a>
+  <img src="https://img.shields.io/badge/Android-10%2B-3DDC84?logo=android&logoColor=white" alt="Android 10+">
+</p>
+
 ---
 
 > 不通过盲目删除 APK，而是在应用**运行过程中**分析其真实行为，识别无价值模块，并通过 Hook、规则和动态策略实现轻量化。
