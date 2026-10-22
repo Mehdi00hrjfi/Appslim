@@ -92,7 +92,7 @@ fun AppDetailScreen(vm: MainViewModel, onBack: () -> Unit, onLens: (String) -> U
                 IconButton(onClick = onBack) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "返回",
+                        contentDescription = "رجوع",
                         tint = MiuiTextPrimary
                     )
                 }
@@ -111,13 +111,13 @@ fun AppDetailScreen(vm: MainViewModel, onBack: () -> Unit, onLens: (String) -> U
             MiuiCard {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(modifier = Modifier.weight(1f)) {
-                        MiuiSectionTitle("风险评分")
+                        MiuiSectionTitle("تقييم الخطورة")
                         val avg = if (metrics.isEmpty()) 0
                                   else metrics.map { RiskScorer.combined(it) }.average().toInt()
                         Text(
                             text = when {
-                                scanning -> "扫描中…"
-                                metrics.isEmpty() -> "暂无数据"
+                                scanning -> "جارٍ الفحص…"
+                                metrics.isEmpty() -> "لا توجد بيانات"
                                 else -> "$avg / 100"
                             },
                             fontSize = 28.sp,
@@ -127,14 +127,14 @@ fun AppDetailScreen(vm: MainViewModel, onBack: () -> Unit, onLens: (String) -> U
                         )
                         if (riskyCount > 0) {
                             Text(
-                                "$riskyCount 个组件可安全禁用",
+                                "$riskyCount مكوّنات يمكن تعطيلها بأمان",
                                 fontSize = 12.sp,
                                 color = MiuiTextSecondary,
                                 modifier = Modifier.padding(top = 2.dp)
                             )
                         }
                     }
-                    MiuiBadge(text = "已阻断 $totalBlocked", color = MiuiGreen)
+                    MiuiBadge(text = "محظور $totalBlocked", color = MiuiGreen)
                 }
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -146,7 +146,7 @@ fun AppDetailScreen(vm: MainViewModel, onBack: () -> Unit, onLens: (String) -> U
                         enabled = riskyCount > 0
                     ) {
                         Text(
-                            if (riskyCount > 0) "选中 $riskyCount 项" else "一键优化",
+                            if (riskyCount > 0) "تحديد $riskyCount عنصر" else "تحسين بنقرة واحدة",
                             fontSize = 14.sp
                         )
                     }
@@ -158,7 +158,7 @@ fun AppDetailScreen(vm: MainViewModel, onBack: () -> Unit, onLens: (String) -> U
                         colors = ButtonDefaults.buttonColors(containerColor = MiuiOrange),
                         enabled = totalBlocked > 0 && applyState !is MainViewModel.ApplyState.Running
                     ) {
-                        Text("执行冻结", fontSize = 14.sp)
+                        Text("تنفيذ التجميد", fontSize = 14.sp)
                     }
                 }
 
@@ -179,7 +179,7 @@ fun AppDetailScreen(vm: MainViewModel, onBack: () -> Unit, onLens: (String) -> U
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = MiuiGreen)
             ) {
-                Text("一键检测", fontSize = 15.sp)
+                Text("فحص بنقرة واحدة", fontSize = 15.sp)
             }
 
             Spacer(Modifier.height(12.dp))
@@ -233,6 +233,246 @@ fun AppDetailScreen(vm: MainViewModel, onBack: () -> Unit, onLens: (String) -> U
 /**
  * 执行状态条。
  *
+ * 三件事要让用户看到：
+ *   1. 正在跑（进度）
+ *   2. 跑完了什么结果（走的哪条通道、多快、有没有走防火墙层）
+ *   3. 后悔了怎么办（恢复按钮）
+ *
+ * 第 2 点里「有没有走防火墙层」值得单独说 —— 只有 PM 层的话，
+ * 应用重启时能把自己 enable 回来，用户得知道这个区别。
+ */
+@Composable
+private fun ApplyStatusBar(
+    state: MainViewModel.ApplyState,
+    dualLayer: Boolean,
+    onDismiss: () -> Unit,
+    onRestore: () -> Unit,
+) {
+    when (state) {
+        is MainViewModel.ApplyState.Idle -> {
+            if (!dualLayer) {
+                Text(
+                    "بدون Root: قد يعود التطبيق للعمل تلقائياً بعد التجميد",
+                    fontSize = 11.sp,
+                    color = MiuiTextSecondary,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+        }
+
+        is MainViewModel.ApplyState.Running -> {
+            Column(modifier = Modifier.padding(top = 10.dp)) {
+                Text(
+                    "جارٍ التجميد ${state.done} / ${state.total}",
+                    fontSize = 12.sp,
+                    color = MiuiTextPrimary
+                )
+                LinearProgressIndicator(
+                    progress = {
+                        if (state.total == 0) 0f
+                        else state.done.toFloat() / state.total
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 6.dp),
+                    color = MiuiOrange,
+                    trackColor = Color(0xFFEEEEEE),
+                )
+            }
+        }
+
+        is MainViewModel.ApplyState.Done -> {
+            val r = state.result
+            Column(modifier = Modifier.padding(top = 10.dp)) {
+                Text(
+                    r.describe(),
+                    fontSize = 12.sp,
+                    color = if (r.allOk) MiuiGreen else MiuiOrange
+                )
+                if (!r.dualLayer && r.succeeded > 0) {
+                    Text(
+                        "يعمل طبقة PM فقط، وقد يعود التطبيق بعد إعادة التشغيل. تثبيت Root يفعّل طبقة جدار الحماية.",
+                        fontSize = 11.sp,
+                        lineHeight = 16.sp,
+                        color = MiuiTextSecondary,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+                Row(
+                    modifier = Modifier.padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Text(
+                        "حسناً",
+                        fontSize = 12.sp,
+                        color = MiuiGreen,
+                        modifier = Modifier.clickable { onDismiss() }
+                    )
+                    Text(
+                        "استعادة الكل",
+                        fontSize = 12.sp,
+                        color = MiuiRed,
+                        modifier = Modifier.clickable { onRestore() }
+                    )
+                }
+            }
+        }
+
+        is MainViewModel.ApplyState.Failed -> {
+            Text(
+                state.message,
+                fontSize = 12.sp,
+                color = MiuiRed,
+                modifier = Modifier
+                    .padding(top = 10.dp)
+                    .clickable { onDismiss() }
+            )
+        }
+    }
+}
+
+/**
+ * 单个组件卡片。
+ *
+ * 相比原来多了三样东西：
+ *   1. 行为标签 —— 「开机自启」「推送服务」这种，比一串混淆类名有用得多；
+ *   2. 不安全标记 —— 桌面入口/前台服务禁用后用户立刻能感知，得先警告；
+ *   3. 点开看副作用 —— 默认收起，想知道「关了会怎样」再展开。
+ */
+@Composable
+private fun ComponentRow(
+    m: ComponentMetric,
+    isBlocked: Boolean,
+    onToggle: () -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val total = RiskScorer.combined(m)
+    val tier = RiskScorerTierOf(total)
+    val tierColor = tierColor(tier)
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MiuiSurface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        m.className.substringAfterLast('.'),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = MiuiTextPrimary
+                    )
+                    if (m.description.isNotBlank()) {
+                        Text(
+                            m.description,
+                            fontSize = 12.sp,
+                            color = MiuiTextSecondary,
+                            modifier = Modifier.padding(top = 3.dp)
+                        )
+                    }
+                }
+                Switch(
+                    checked = isBlocked,
+                    onCheckedChange = { onToggle() },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = if (m.safeToBlock) MiuiGreen else MiuiRed,
+                        uncheckedThumbColor = Color.White,
+                        uncheckedTrackColor = Color(0xFFE0E0E0)
+                    )
+                )
+            }
+
+            // 风险分 + 行为标签，横向可滚，标签多了不会挤爆
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                MiuiBadge(text = "$total · ${tier.label}", color = tierColor)
+                m.behaviorTags.forEach { tag ->
+                    MiuiBadge(text = tag, color = behaviorTagColor(tag))
+                }
+            }
+
+            if (!m.safeToBlock && m.behaviorTags.isNotEmpty()) {
+                Text(
+                    "تعطيله يؤثر على وظائف ظاهرة، يُنصح بإبقائه",
+                    fontSize = 11.sp,
+                    color = MiuiRed,
+                    modifier = Modifier.padding(top = 6.dp)
+                )
+            }
+
+            if (m.sideEffect.isNotBlank()) {
+                Text(
+                    text = if (expanded) "إخفاء الشرح" else "ماذا يحدث عند الإيقاف؟",
+                    fontSize = 12.sp,
+                    color = MiuiGreen,
+                    modifier = Modifier
+                        .padding(top = 8.dp)
+                        .clickable { expanded = !expanded }
+                )
+                if (expanded) {
+                    MiuiDividerLine()
+                    Text(
+                        text = m.sideEffect,
+                        fontSize = 12.sp,
+                        lineHeight = 18.sp,
+                        color = MiuiTextSecondary,
+                        modifier = Modifier.padding(top = 6.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 标签配色。红 = 该关，橙 = 可关，绿 = 别乱关。
+ * 用颜色而不是文字来传达「这个能不能动」，扫一眼就有判断。
+ */
+private fun behaviorTagColor(tag: String): Color = when (tag) {
+    "开机自启", "持有唤醒锁" -> MiuiRed
+    "频繁唤醒", "开放数据接口", "推送服务" -> MiuiOrange
+    "无保护对外暴露", "解锁前运行", "独立进程" -> MiuiYellow
+    else -> MiuiGreen  // 桌面入口 / 前台服务 / 深链：动了会出事
+}
+
+private fun typeLabel(type: ComponentType): String = when (type) {
+    ComponentType.SERVICE -> "الخدمات"
+    ComponentType.RECEIVER -> "المستقبِلات"
+    ComponentType.PROVIDER -> "Provider"
+    ComponentType.ACTIVITY -> "Activity"
+}
+
+private fun tierColorForScore(score: Int): Color = when {
+    score >= 85 -> MiuiRed
+    score >= 65 -> MiuiOrange
+    score >= 40 -> MiuiYellow
+    else -> MiuiGreen
+}
+
+private fun tierColor(tier: RiskTier): Color = when (tier) {
+    RiskTier.BLOCK -> MiuiRed
+    RiskTier.HIGH -> MiuiOrange
+    RiskTier.MID -> MiuiYellow
+    RiskTier.LOW -> MiuiGreen
+}
+
+private fun RiskScorerTierOf(score: Int): RiskTier = when {
+    score >= 85 -> RiskTier.BLOCK
+    score >= 65 -> RiskTier.HIGH
+    score >= 40 -> RiskTier.MID
+    else -> RiskTier.LOW
+}*
  * 三件事要让用户看到：
  *   1. 正在跑（进度）
  *   2. 跑完了什么结果（走的哪条通道、多快、有没有走防火墙层）
